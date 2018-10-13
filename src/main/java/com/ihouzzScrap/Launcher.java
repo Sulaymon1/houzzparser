@@ -11,8 +11,12 @@ import java.util.List;
 public class Launcher {
 
     public static void main(String[] args) {
-        UrlExtractor urlExtractor = new UrlExtractor("https://www.houzz.com/professionals/interior-designer/c/New-York--NY");
+        String URL = "https://www.houzz.com/professionals/interior-designer/c/New-York--NY";
+        UrlExtractor urlExtractor = new UrlExtractor(URL);
+        DataExtractor dataExtractor = new DataExtractor();
         List<String> list = urlExtractor.getProjectURLsByPage(0);
+        List<ProjectDTO> projectDTOList = dataExtractor.extractDataOfAllUrl(list);
+
 
     }
 }
