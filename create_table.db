@@ -1,0 +1,19 @@
+create table houzz_tmp
+(
+  id              bigserial not null
+    constraint houzz_pkey
+    unique,
+  project_website varchar,
+  phone           varchar,
+  contact         varchar,
+  location        varchar,
+  houzz_link_id   bigint
+    constraint houzz_tmp_houzz_links_id_fk
+    references houzz_links
+);
+
+alter table houzz_tmp
+  owner to postgres;
+
+create unique index houzz_tmp_id_uindex
+  on houzz_tmp (id);

@@ -1,13 +1,17 @@
 package com.ihouzzScrap;
 
+import com.models.HouzzDataModel;
+import com.proxy.ProxyProvider;
+import org.jsoup.Connection;
+import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
+import java.net.SocketTimeoutException;
+import java.util.*;
 
 /**
  * Date 14.10.2018
@@ -17,53 +21,101 @@ import java.util.List;
  **/
 public class DataExtractor {
 
+    private ProxyProvider proxyProvider;
+    private Set<String> uniqueWebsite;
 
-    private ProjectDTO extractData(String url){
-        String houzzUrl = url;
+    public DataExtractor(ProxyProvider proxyProvider) {
+        uniqueWebsite = new HashSet<>();
+        this.proxyProvider = proxyProvider;
+    }
+
+    public DataExtractor() {
+    }
+
+    private HouzzDataModel extractData(Long urlID,String url){
+        String houzzUrl = null;
         String website = null;
         String phone = null;
         String contact = null;
         String location = null;
-        ProjectDTO projectDTO;
-        try {
-            Document document = Jsoup.connect(url).get();
-            website = document.getElementsByClass("pro-contact-website-text").parents().first().attr("href");
-            String profileName = document.getElementsByClass("profile-full-name").text();
-            Elements phoneNumber = document.getElementsByClass("pro-contact-text");
-            if (phoneNumber != null && phoneNumber.first() != null && phoneNumber.first().firstElementSibling() != null ){
-                phone = phoneNumber.first().child(0).attr("phone");
-            }
-            Elements contactInfo = document.getElementsByTag("b");
-            if (contactInfo != null)
-                for (Element info: contactInfo){
-                    if (info.hasText() && info.text().equals("Contact")) {
-                        contact = info.parent().text().substring(8);
-                    }else if (info.hasText() && info.text().equals("Location")) {
-                        location = info.parent().text().substring(9);
-                    }
-                }
-            projectDTO = ProjectDTO.builder()
-                    .houzzUrl(houzzUrl)
-                    .projectWebsite(website)
-                    .phone(phone)
-                    .contact(contact)
-                    .location(location)
-                    .build();
-            return projectDTO;
-        } catch (IOException e) {
-            e.printStackTrace();
+        HouzzDataModel houzzDataModel;
+        Document document = connect(url);
+        if (document == null)
             return null;
+        houzzUrl = document.location();
+        Elements websiteElements = document.getElementsByClass("pro-contact-website-text");
+        if (websiteElements != null && websiteElements.parents() != null && websiteElements.parents().first() != null)
+            website = websiteElements.parents().first().attr("href");
+        String profileName = document.getElementsByClass("profile-full-name").text();
+        Elements phoneNumber = document.getElementsByClass("pro-contact-text");
+        if (phoneNumber != null && phoneNumber.first() != null){
+            try {
+                if (phoneNumber.first().text() != null && phoneNumber.first().text().equals("Click to Call"))
+                    phone = phoneNumber.first().child(0).attr("phone");
+                else
+                    phone = phoneNumber.first().text();
+            }catch (IndexOutOfBoundsException e){
+                e.printStackTrace();
+                phone = phoneNumber.first().text();
+            }
         }
+        Elements contactInfo = document.getElementsByTag("b");
+        if (contactInfo != null)
+            for (Element info: contactInfo){
+                if (info.hasText() && info.text().equals("Contact")) {
+                    contact = info.parent().text().substring(8);
+                }else if (info.hasText() && info.text().equals("Location")) {
+                    location = info.parent().text().substring(9);
+                }
+            }
+        houzzDataModel = new HouzzDataModel();
+            houzzDataModel.setContact(contact);
+            houzzDataModel.setHouzzLinkId(urlID);
+            houzzDataModel.setHouzzUrl(houzzUrl);
+            houzzDataModel.setLocation(location);
+            houzzDataModel.setPhone(phone);
+            houzzDataModel.setProjectWebsite(website);
+        return houzzDataModel;
     }
 
-    public List<ProjectDTO> extractDataOfAllUrl(List<String> urls){
-        List<ProjectDTO> projectDTOList = new ArrayList<>();
+    private Document connect(String url){
+        Document document = null;
+        try {
+            Connection connection;
+            if (proxyProvider != null){
+                connection = Jsoup.connect(url).proxy(proxyProvider.getProxy()).followRedirects(true);
+            }else connection = Jsoup.connect(url).followRedirects(true);
+            document = connection.get();
+        }catch (HttpStatusException status) {
+            if (status.getStatusCode() == 429) {
+                proxyProvider.changeProxy();
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException e1) {
+                    e1.printStackTrace();
+                }
+                return connect(url);
+            }
+        }catch (SocketTimeoutException s){
+            proxyProvider.changeProxy();
+            return null;
+        } catch (IOException e) {
+           //e.printStackTrace();
+           proxyProvider.changeProxy();
+           return null;
+        }
+        return document;
+    }
+
+    public List<HouzzDataModel> extractDataOfAllUrl(Long urlID,List<String> urls){
+        List<HouzzDataModel> houzzDataModels = new ArrayList<>();
         for (String url:urls) {
-            ProjectDTO projectDTO = extractData(url);
-            if (projectDTO != null){
-                projectDTOList.add(projectDTO);
+            HouzzDataModel houzzDataModel = extractData(urlID,url);
+            if (houzzDataModel != null && !uniqueWebsite.contains(houzzDataModel.getProjectWebsite())){
+                uniqueWebsite.add(houzzDataModel.getProjectWebsite());
+                houzzDataModels.add(houzzDataModel);
             }
         }
-        return projectDTOList;
+        return houzzDataModels;
     }
 }
